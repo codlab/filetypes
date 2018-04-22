@@ -12,7 +12,27 @@ const readFile = (file) =>{
   } catch (err) {
     throw err
   }
+}
 
+const readHeader = (file) => {
+  return new Promise((resolve, reject) => {
+    fs.open(file, 'r', function(status, fd) {
+      fs.fstat(fd, (err, stat) => {
+        if (err || !stat) {
+          reject(err);
+          return;
+        }
+        var buffer = new Buffer(512);
+        const read = Math.min(512, stat.size);
+        fs.read(fd, buffer, 0, read, 0, function(err, bytes, buffer) {
+          fs.close(fd, (err) => {
+            if (err) reject(err);
+            else resolve(buffer);
+          });
+        });
+      });
+    });
+  })
 }
 
 const findExtension = (mineType) =>{
@@ -23,46 +43,67 @@ const findExtension = (mineType) =>{
   return types?types.find((mine)=> mine.extension === mineType):null;
 }
 
-const FileTypes = {
-  version: "1.0.2",
-  guessMineType: (file = null, checkBuffer= false)=>{
-    if(!file)
+class FileTypes {
+
+  constructor(file) {
+    this._file = file;
+    this.version = "1.0.3";
+  }
+
+  read() {
+    return new Promise((resolve, reject) => {
+      readHeader(this._file)
+      .then(buffer => {
+        this._data = buffer;
+        resolve(true);
+      });
+    })
+  }
+
+  guessMineType() {
+    if(!this._file || !this._data)
       return null;
-    let ext = file.split('.').pop();
-    if(!ext)
-      return null;
-    let extMatcher = findExtension(ext);
-    if(!checkBuffer)
-      return extMatcher;
-    return extMatcher && extMatcher.match(readFile(file))? extMatcher: null;
-  },
+      //not checking using the extension, to easy to hack <3
 
-  isAudio:(file= null)=>{
-    let buffer = readFile(file);
-    return !!audiosMatcher.find((mine)=> mine.match(buffer))
-  },
+      var found = null; //TODO each
+      found = this.closestAudio();
+      if(found) return found;
+      found = this.closestArchive();
+      if(found) return found;
+      found = this.closestFont();
+      if(found) return found;
+      found = this.closestImage();
+      if(found) return found;
+      found = this.closestVideo();
+      if(found) return found;
+  }
 
-  isArchive:(file= null)=>{
-    let buffer = readFile(file);
-    return !!archivesMatcher.find((mine)=> mine.match(buffer))
-  },
+  closestAudio() {
+    return this._isWat(audiosMatcher)
+  }
 
-  isFont:(file= null)=>{
-    let buffer = readFile(file);
-    return !!fontsMatcher.find((mine)=> mine.match(buffer))
-  },
+  closestArchive() {
+    return this._isWat(archivesMatcher)
+  }
 
-  isImage:(file= null)=>{
-    let buffer = readFile(file);
-    return !!imagesMatcher.find((mine)=> mine.match(buffer))
-  },
+  closestFont() {
+    return this._isWat(fontsMatcher)
+  }
 
-  isVideo:(file= null)=>{
-    let buffer = readFile(file);
-    return !!videosMatcher.find((mine)=> mine.match(buffer))
-  },
+  closestImage() {
+    return this._isWat(imagesMatcher)
+  }
 
-  isMineSupported:(mineType)=>{
+  closestVideo() {
+    return this._isWat(videosMatcher)
+  }
+
+  _isWat(wat) {
+    const filtered = wat.filter((mine)=> mine.match(this._data));
+    return filtered && filtered.length > 0 ? filtered[0] : null;
+  }
+
+  isMineSupported(mineType) {
     !!findExtension(mineType);
   }
 }
